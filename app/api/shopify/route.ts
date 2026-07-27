@@ -33,14 +33,16 @@ async function fetchFromShopifyAPI(): Promise<any> {
     throw new Error('SHOPIFY_ACCESS_TOKEN 환경 변수가 설정되지 않았습니다.');
   }
 
-  const url = `https://${shop}/admin/api/${apiVersion}/orders.json?status=any&limit=50`;
+  // 30일 전부터의 데이터 가져오기
+const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+const url = `https://${shop}/admin/api/${apiVersion}/orders.json?status=any&limit=250&created_at_min=${thirtyDaysAgo.toISOString()}`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
     const response = await fetch(url, {
-      method: 'GET',
+      method: 'GET',ㄷ
       headers: {
         'X-Shopify-Access-Token': accessToken,
         'Content-Type': 'application/json',
