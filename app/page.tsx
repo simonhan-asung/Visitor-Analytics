@@ -242,6 +242,24 @@ export default function VisitorAnalyticsDashboard() {
             {/* ✅ 강제 새로고침 - force=true로 캐시 무시 */}
             <button
               onClick={() => fetchShopifyData(true)}
+              useEffect(() => {
+  fetchShopifyData();
+  fetchGA4Data(); // ← 이 줄 추가
+}, []);
+              // GA4 데이터 로드
+              const fetchGA4Data = async () => {
+                try {
+                  const res = await fetch('/api/ga4');
+                  const data = await res.json();
+                  
+                  if (data.success) {
+                    console.log('GA4 데이터:', data);
+                    // 나중에 상태 저장
+                  }
+                } catch (err) {
+                  console.error('GA4 Fetch error:', err);
+                }
+              };
               disabled={loading}
               style={{
                 backgroundColor: loading ? '#7f1d1d' : '#e11d48',
