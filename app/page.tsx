@@ -55,26 +55,19 @@ export default function VisitorAnalyticsDashboard() {
   const [period, setPeriod] = useState('최근 7일');
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null); // ✅ 마지막 업데이트 시각
 
-  // 쇼피파이 데이터 로드 (clearCache가 true면 캐시 비우고 재요청)
-  const fetchShopifyData = async (clearCache = false) => {
+  // ✅ 강제 새로고침 옵션 추가 (force=true 시 캐시 무시)
+  const fetchShopifyData = async (forceRefresh = false) => {
     setLoading(true);
     try {
-      if (clearCache) {
-        await fetch('/api/shopify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'clear-cache' }),
-        });
-      }
-
-      const res = await fetch('/api/shopify');
+      const url = forceRefresh ? '/api/shopify?force=true' : '/api/shopify';
+      const res = await fetch(url, { cache: 'no-store' });
       const data = await res.json();
 
-      if (data.success && data.orders) {
+      if (data.orders && Array.isArray(data.orders)) {
         setOrders(data.orders);
-      } else if (data.orders) {
-        setOrders(data.orders);
+        setLastUpdated(new Date());
       }
     } catch (err) {
       console.error('Fetch error:', err);
@@ -83,8 +76,18 @@ export default function VisitorAnalyticsDashboard() {
     }
   };
 
+  // ✅ 초기 로드
   useEffect(() => {
     fetchShopifyData();
+  }, []);
+
+  // ✅ 5분마다 자동 갱신
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchShopifyData();
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
   }, []);
 
   // --- [데이터 계산 및 집계 로직] ---
@@ -120,7 +123,7 @@ export default function VisitorAnalyticsDashboard() {
   }, {});
 
   const chartData: ChartDataItem[] = Object.values(chartDataMap).sort((a, b) => a.date.localeCompare(b.date));
-  const activeChartData: ChartDataItem[] = chartData.length > 0 ? chartData : FALLBACK_CHART_DATA; // ✅ 타입 추가
+  const activeChartData: ChartDataItem[] = chartData.length > 0 ? chartData : FALLBACK_CHART_DATA;
 
   // 4. 브랜드 / SKU 분석
   const vendorMap: { [key: string]: { count: number; revenue: number } } = {};
@@ -165,14 +168,15 @@ export default function VisitorAnalyticsDashboard() {
       
       {/* 1. 최상단 네비게이션 헤더 */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', borderBottom: '1px solid #33141a', backgroundColor: '#0f0507' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontWeight: 'bold', fontSize: '18px', letterSpacing: '2px', color: '#ffffff' }}>Aone Beauty</span>
-          <span style={{ color: '#521d26' }}>|</span>
-          <span style={{ fontSize: '14px', color: '#fda4af', fontWeight: '500' }}>Visitor Analytics</span>
-        </div>
+       <div style={{ fontSize: '13px', color: '#9f1239' }}>
+  업데이트: {lastUpdated ? lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+</div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px' }}>
-          <span style={{ color: '#9f1239' }}>조회: {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          {/* ✅ 마지막 업데이트 시각 표시 */}
+          <span style={{ color: '#9f1239' }}>
+            업데이트: {lastUpdated ? lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+          </span>
           <button style={{ backgroundColor: '#2e0f15', color: '#fecdd3', border: '1px solid #4c1d24', borderRadius: '6px', padding: '5px 12px', fontSize: '12px', cursor: 'pointer' }}>
             → 매출 분석
           </button>
@@ -248,17 +252,20 @@ export default function VisitorAnalyticsDashboard() {
               <option value="이번 달">이번 달</option>
             </select>
 
+            {/* ✅ 강제 새로고침 - force=true로 캐시 무시 */}
             <button
               onClick={() => fetchShopifyData(true)}
+              disabled={loading}
               style={{
-                backgroundColor: '#e11d48',
+                backgroundColor: loading ? '#7f1d1d' : '#e11d48',
                 color: '#ffffff',
                 border: 'none',
                 borderRadius: '8px',
                 padding: '8px 18px',
                 fontSize: '14px',
                 fontWeight: '500',
-                cursor: 'pointer',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                opacity: loading ? 0.7 : 1,
               }}
             >
               🔄 {loading ? '동기화 중...' : '새로고침'}

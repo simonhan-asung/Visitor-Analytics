@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// ============ 캐싱 전략 (1시간 보관) ============
+// ============ 캐싱 전략 (5분 보관) ============
 const CACHE_CONFIG = {
-  ttl: 60 * 60 * 1000, // 1시간 (밀리초)
+  ttl: 5 * 60 * 1000, // ✅ 5분 (기존 1시간 → 5분)
   key: 'shopify_orders_cache',
 };
 
@@ -12,7 +12,7 @@ let cacheTimestamp: number | null = null;
 function getCachedData() {
   const now = Date.now();
   if (cachedData && cacheTimestamp && (now - cacheTimestamp) < CACHE_CONFIG.ttl) {
-    console.log('✓ 백엔드 1시간 캐시 데이터 사용');
+    console.log('✓ 백엔드 5분 캐시 데이터 사용');
     return cachedData;
   }
   return null;
@@ -36,7 +36,7 @@ async function fetchFromShopifyAPI(): Promise<any> {
   const url = `https://${shop}/admin/api/${apiVersion}/orders.json?status=any&limit=50`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10초 타임아웃
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
     const response = await fetch(url, {
@@ -113,17 +113,27 @@ function validateAndFilterOrders(orders: any[]): any[] {
 // ============ GET 엔드포인트 ============
 export async function GET(request: NextRequest) {
   try {
-    const cached = getCachedData();
-    if (cached) {
-      return NextResponse.json({
-        success: true,
-        orders: cached,
-        source: 'cache',
-        timestamp: new Date().toISOString(),
-      });
+    // ✅ force=true 파라미터 시 캐시 무시
+    const forceRefresh = request.nextUrl.searchParams.get('force') === 'true';
+
+    if (!forceRefresh) {
+      const cached = getCachedData();
+      if (cached) {
+        return NextResponse.json({
+          success: true,
+          orders: cached,
+          source: 'cache',
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } else {
+      // 강제 새로고침 시 캐시 초기화
+      cachedData = null;
+      cacheTimestamp = null;
+      console.log('🔄 강제 새로고침 - 캐시 초기화');
     }
 
-    console.log('📡 Shopify API 호출 시작 (1시간 보관)...');
+    console.log('📡 Shopify API 호출 시작 (5분 보관)...');
     const shopifyResponse = await fetchFromShopifyAPI();
 
     if (!shopifyResponse.orders || shopifyResponse.orders.length === 0) {
