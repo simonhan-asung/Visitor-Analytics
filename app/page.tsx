@@ -120,7 +120,7 @@ export default function VisitorAnalyticsDashboard() {
   }, {});
 
   const chartData: ChartDataItem[] = Object.values(chartDataMap).sort((a, b) => a.date.localeCompare(b.date));
-  const activeChartData = chartData.length > 0 ? chartData : FALLBACK_CHART_DATA;
+  const activeChartData: ChartDataItem[] = chartData.length > 0 ? chartData : FALLBACK_CHART_DATA; // ✅ 타입 추가
 
   // 4. 브랜드 / SKU 분석
   const vendorMap: { [key: string]: { count: number; revenue: number } } = {};
