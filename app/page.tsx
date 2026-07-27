@@ -168,27 +168,14 @@ export default function VisitorAnalyticsDashboard() {
       
       {/* 1. 최상단 네비게이션 헤더 */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', borderBottom: '1px solid #33141a', backgroundColor: '#0f0507' }}>
-       <div style={{ fontSize: '13px', color: '#9f1239' }}>
-  업데이트: {lastUpdated ? lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
-</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontWeight: 'bold', fontSize: '18px', letterSpacing: '2px', color: '#ffffff' }}>Aone Beauty</span>
+          <span style={{ color: '#521d26' }}>|</span>
+          <span style={{ fontSize: '14px', color: '#fda4af', fontWeight: '500' }}>Visitor Analytics</span>
+        </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '13px' }}>
-          {/* ✅ 마지막 업데이트 시각 표시 */}
-          <span style={{ color: '#9f1239' }}>
-            업데이트: {lastUpdated ? lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
-          </span>
-          <button style={{ backgroundColor: '#2e0f15', color: '#fecdd3', border: '1px solid #4c1d24', borderRadius: '6px', padding: '5px 12px', fontSize: '12px', cursor: 'pointer' }}>
-            → 매출 분석
-          </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: '#e11d48', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold' }}>
-              S
-            </div>
-            <span style={{ color: '#ffe4e6' }}>simonhan@asung.ca</span>
-          </div>
-          <button style={{ backgroundColor: 'transparent', color: '#9f1239', border: 'none', cursor: 'pointer', fontSize: '12px' }}>
-            Sign out
-          </button>
+        <div style={{ fontSize: '13px', color: '#9f1239' }}>
+          업데이트: {lastUpdated ? lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
         </div>
       </header>
 
