@@ -38,6 +38,18 @@ interface Order {
   line_items?: LineItem[];
 }
 
+interface ChartDataItem {
+  date: string;
+  pageViews: number;
+  uniqueVisitors: number;
+  orderCount: number;
+}
+
+// Fallback 데이터 (타입 에러 방지용)
+const FALLBACK_CHART_DATA: ChartDataItem[] = [
+  { date: '2026-07-27', pageViews: 0, uniqueVisitors: 0, orderCount: 0 },
+];
+
 export default function VisitorAnalyticsDashboard() {
   const [activeTab, setActiveTab] = useState('개요');
   const [period, setPeriod] = useState('최근 7일');
@@ -96,7 +108,7 @@ export default function VisitorAnalyticsDashboard() {
   const nonConvertingOrders = orders.filter((o) => o.financial_status !== 'paid' && o.financial_status !== 'authorized');
 
   // 3. 일별 트래픽/주문 차트 데이터
-  const chartDataMap = orders.reduce((acc: { [key: string]: { date: string; pageViews: number; uniqueVisitors: number; orderCount: number } }, order) => {
+  const chartDataMap = orders.reduce((acc: { [key: string]: ChartDataItem }, order) => {
     const date = order.created_at.split('T')[0];
     if (!acc[date]) {
       acc[date] = { date, pageViews: 0, uniqueVisitors: 0, orderCount: 0 };
@@ -107,7 +119,8 @@ export default function VisitorAnalyticsDashboard() {
     return acc;
   }, {});
 
-  const chartData = Object.values(chartDataMap).sort((a, b) => a.date.localeCompare(b.date));
+  const chartData: ChartDataItem[] = Object.values(chartDataMap).sort((a, b) => a.date.localeCompare(b.date));
+  const activeChartData = chartData.length > 0 ? chartData : FALLBACK_CHART_DATA;
 
   // 4. 브랜드 / SKU 분석
   const vendorMap: { [key: string]: { count: number; revenue: number } } = {};
@@ -296,7 +309,7 @@ export default function VisitorAnalyticsDashboard() {
                 </h3>
                 <div style={{ width: '100%', height: 320 }}>
                   <ResponsiveContainer>
-                   <LineChart data={chartData.length > 0 ? chartData : [{ date: '2026-07-27', pageViews: 100, uniqueVisitors: 10, orderCount: 0 }]}>
+                    <LineChart data={activeChartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#33141a" vertical={false} />
                       <XAxis dataKey="date" stroke="#881337" fontSize={12} tickLine={false} />
                       <YAxis stroke="#881337" fontSize={12} tickLine={false} />
@@ -315,7 +328,7 @@ export default function VisitorAnalyticsDashboard() {
                 </h3>
                 <div style={{ width: '100%', height: 320 }}>
                   <ResponsiveContainer>
-                    <BarChart data={chartData.length > 0 ? chartData : [{ date: '2026-07-27', orderCount: 1 }]}>
+                    <BarChart data={activeChartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#33141a" vertical={false} />
                       <XAxis dataKey="date" stroke="#881337" fontSize={12} tickLine={false} />
                       <YAxis stroke="#881337" fontSize={12} tickLine={false} />
