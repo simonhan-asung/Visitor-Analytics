@@ -296,7 +296,7 @@ export default function VisitorAnalyticsDashboard() {
                 </h3>
                 <div style={{ width: '100%', height: 320 }}>
                   <ResponsiveContainer>
-                    <LineChart data={chartData.length > 0 ? chartData : [{ date: '2026-07-27', pageViews: 100, uniqueVisitors: 10 }]}>
+                   <LineChart data={chartData.length > 0 ? chartData : [{ date: '2026-07-27', pageViews: 100, uniqueVisitors: 10, orderCount: 0 }]}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#33141a" vertical={false} />
                       <XAxis dataKey="date" stroke="#881337" fontSize={12} tickLine={false} />
                       <YAxis stroke="#881337" fontSize={12} tickLine={false} />
