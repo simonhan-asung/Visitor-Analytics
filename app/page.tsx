@@ -160,7 +160,7 @@ export default function VisitorAnalyticsDashboard() {
               </div>
               <div style={{ backgroundColor: '#1c0d10', borderRadius: '10px', padding: '16px', border: '1px solid #33141a', borderTop: '3px solid #fbbf24' }}>
                 <div style={{ fontSize: '12px', color: '#fda4af' }}>총 매출</div>
-                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ffffff' }}>${orders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0).toFixed(2)}</div>
+                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ffffff' }}>${orders.reduce((sum, o) => sum + parseFloat(o.total_price || '0'), 0).toFixed(2)}</div>
               </div>
             </div>
 
