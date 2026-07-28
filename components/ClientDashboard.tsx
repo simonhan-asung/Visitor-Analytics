@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { signIn, useSession } from 'next-auth/react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, BarChart, Bar } from 'recharts';
 
 interface Order {
@@ -31,6 +32,7 @@ interface ChartDataItem {
 }
 
 export default function ClientDashboard() {
+  const { data: session } = useSession();
   const [activeTab, setActiveTab] = useState('개요');
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<Order[]>([]);
