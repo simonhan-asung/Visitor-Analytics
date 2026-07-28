@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { signIn, signOut, useSession } from 'next-auth/react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 
 interface LineItem {
@@ -50,6 +51,7 @@ const FALLBACK_CHART_DATA: ChartDataItem[] = [
 ];
 
 export default function VisitorAnalyticsDashboard() {
+  const { data: session, status } = useSession();
   const [activeTab, setActiveTab] = useState('개요');
   const [period, setPeriod] = useState('최근 7일');
   const [loading, setLoading] = useState(true);
@@ -102,8 +104,14 @@ export default function VisitorAnalyticsDashboard() {
 
   useEffect(() => {
     fetchShopifyData();
-    fetchGA4Data();
   }, []);
+
+  // ✅ 로그인 상태가 바뀌면 GA4 다시 조회
+  useEffect(() => {
+    if (status !== 'loading') {
+      fetchGA4Data();
+    }
+  }, [status]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -475,10 +483,31 @@ export default function VisitorAnalyticsDashboard() {
           </div>
         )}
 
-        {/* ===== GA4 분석 (로그인 안 되어 있어도 멈추지 않음) ===== */}
+        {/* ===== GA4 분석 ===== */}
         {activeTab === 'GA4 분석' && (
           <div style={{ backgroundColor: '#1c0d10', border: '1px solid #33141a', borderRadius: '12px', padding: '24px' }}>
-            <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>🌐 Google Analytics 4 데이터</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <h3 style={{ marginTop: 0, marginBottom: 0, color: '#ffe4e6' }}>🌐 Google Analytics 4 데이터</h3>
+
+              {status === 'authenticated' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '13px', color: '#fda4af' }}>{session?.user?.email}</span>
+                  <button
+                    onClick={() => signOut()}
+                    style={{ backgroundColor: '#2e0f15', color: '#fecdd3', border: '1px solid #4c1d24', borderRadius: '6px', padding: '6px 14px', fontSize: '13px', cursor: 'pointer' }}
+                  >
+                    로그아웃
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => signIn('google')}
+                  style={{ backgroundColor: '#e11d48', color: '#ffffff', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  🔐 Google로 로그인
+                </button>
+              )}
+            </div>
 
             {ga4Loading && (
               <div style={{ color: '#fda4af', padding: '20px 0' }}>GA4 데이터 불러오는 중...</div>
@@ -488,7 +517,9 @@ export default function VisitorAnalyticsDashboard() {
               <div style={{ backgroundColor: '#2e0f15', border: '1px solid #4c1d24', borderRadius: '8px', padding: '16px', color: '#fbbf24' }}>
                 ⚠️ {ga4Error}
                 <div style={{ fontSize: '12px', color: '#fda4af', marginTop: '8px' }}>
-                  Google 계정으로 로그인해야 실제 데이터를 볼 수 있습니다. (아직 로그인 기능 미완성 시 표시되는 정상적인 메시지입니다)
+                  {status === 'authenticated'
+                    ? 'Google Analytics 데이터를 가져오지 못했습니다. 잠시 후 다시 시도해주세요.'
+                    : '위의 "Google로 로그인" 버튼을 눌러 로그인하면 실제 데이터를 볼 수 있습니다.'}
                 </div>
               </div>
             )}
