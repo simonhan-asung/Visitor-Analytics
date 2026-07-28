@@ -1,33 +1,60 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../auth/[...nextauth]/route';
+import { NextResponse } from 'next/server';
+import { BetaAnalyticsDataClient } from '@google-analytics/data';
 
-export async function GET(request: NextRequest) {
+const GA4_PROPERTY_ID = process.env.GA4_PROPERTY_ID || '123456789';
+
+// Vercel 배포 환경에서도 작동하도록 인증 정보 명시
+const analyticsDataClient = new BetaAnalyticsDataClient({
+  credentials: {
+    client_email: process.env.GCP_CLIENT_EMAIL,
+    private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  },
+  projectId: process.env.GCP_PROJECT_ID,
+});
+
+export async function GET() {
   try {
-    const session = await getServerSession(authOptions) as any;
+    // 1. 실시간 활성 사용자 가져오기
+    const [realtimeResponse] = await analyticsDataClient.runRealtimeReport({
+      property: `properties/${GA4_PROPERTY_ID}`,
+      metrics: [{ name: 'activeUsers' }],
+    });
+    const realtimeUsers = realtimeResponse.rows?.[0]?.metricValues?.[0]?.value || '0';
 
-    if (!session?.user?.accessToken) {
-      return NextResponse.json(
-        { error: 'Unauthorized - Please log in' },
-        { status: 401 }
-      );
-    }
-
-    // 임시 모의 데이터 (실제 GA4 API는 나중에 구현)
-    return NextResponse.json({
-      success: true,
-      realtimeUsers: 42,
-      data: [
-        { date: '2026-07-27', activeUsers: 120, pageViews: 450, engagementRate: 0.65, avgSessionDuration: 3.5 },
-        { date: '2026-07-26', activeUsers: 95, pageViews: 380, engagementRate: 0.58, avgSessionDuration: 3.2 },
+    // 2. 최근 7일간의 상세 사용자 활동 기록 (도시, 기기, 페이지별)
+    const [response] = await analyticsDataClient.runReport({
+      property: `properties/${GA4_PROPERTY_ID}`,
+      dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
+      dimensions: [
+        { name: 'date' },
+        { name: 'city' },
+        { name: 'deviceCategory' },
+        { name: 'pageTitle' }
       ],
-      timestamp: new Date().toISOString(),
+      metrics: [{ name: 'activeUsers' }],
+      orderBys: [{ desc: true, dimension: { dimensionName: 'date' } }],
+      limit: 100, // 최대 100개 항목 표시
     });
 
-  } catch (error) {
-    console.error('GA4 API Error:', error);
+    // 프론트엔드에서 쓰기 좋게 데이터 매핑
+    const detailedData = response.rows?.map((row) => ({
+      date: row.dimensionValues?.[0]?.value,
+      city: row.dimensionValues?.[1]?.value,
+      device: row.dimensionValues?.[2]?.value,
+      pageTitle: row.dimensionValues?.[3]?.value,
+      activeUsers: row.metricValues?.[0]?.value,
+    })) || [];
+
+    return NextResponse.json({ 
+      success: true, 
+      realtimeUsers, 
+      data: detailedData 
+    });
+
+  } catch (error: any) {
+    console.error('GA4 Detail API Error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch GA4 data' },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }

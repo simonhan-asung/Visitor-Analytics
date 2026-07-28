@@ -698,24 +698,41 @@ export default function VisitorAnalyticsDashboard() {
                   </div>
                 </div>
 
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #4c1d24' }}>
-                      <th style={{ padding: '10px', textAlign: 'left', color: '#fda4af' }}>날짜</th>
-                      <th style={{ padding: '10px', textAlign: 'left', color: '#fda4af' }}>활성 사용자</th>
-                      <th style={{ padding: '10px', textAlign: 'left', color: '#fda4af' }}>페이지뷰</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ga4Data.data?.slice(0, 10).map((row: any, idx: number) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid #280d13' }}>
-                        <td style={{ padding: '10px', color: '#fff' }}>{row.date}</td>
-                        <td style={{ padding: '10px', color: '#10b981' }}>{row.activeUsers}</td>
-                        <td style={{ padding: '10px', color: '#f43f5e' }}>{row.pageViews}</td>
+                <h4 style={{ color: '#ffe4e6', marginBottom: '12px' }}>📊 날짜별 상세 방문자 로그 (도시, 기기, 페이지)</h4>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '600px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #4c1d24', backgroundColor: '#14080a' }}>
+                        <th style={{ padding: '12px 10px', textAlign: 'left', color: '#fda4af' }}>날짜</th>
+                        <th style={{ padding: '12px 10px', textAlign: 'left', color: '#fda4af' }}>접속 도시</th>
+                        <th style={{ padding: '12px 10px', textAlign: 'left', color: '#fda4af' }}>접속 기기</th>
+                        <th style={{ padding: '12px 10px', textAlign: 'left', color: '#fda4af' }}>방문 페이지</th>
+                        <th style={{ padding: '12px 10px', textAlign: 'left', color: '#fda4af' }}>활성 사용자 수</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {ga4Data.data?.length > 0 ? (
+                        ga4Data.data.map((row: any, idx: number) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid #280d13' }}>
+                            <td style={{ padding: '10px', color: '#fff' }}>
+                              {row.date ? `${row.date.slice(0,4)}-${row.date.slice(4,6)}-${row.date.slice(6,8)}` : row.date}
+                            </td>
+                            <td style={{ padding: '10px', color: '#fbbf24' }}>{row.city || '-'}</td>
+                            <td style={{ padding: '10px', color: '#c084fc' }}>{row.device || '-'}</td>
+                            <td style={{ padding: '10px', color: '#f43f5e' }}>{row.pageTitle || '-'}</td>
+                            <td style={{ padding: '10px', color: '#10b981', fontWeight: 'bold' }}>{row.activeUsers}명</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} style={{ padding: '20px', textAlign: 'center', color: '#881337' }}>
+                            상세 방문 로그가 없습니다.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
