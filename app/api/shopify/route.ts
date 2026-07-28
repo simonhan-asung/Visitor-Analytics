@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // ============ 캐싱 전략 (5분 보관) ============
 const CACHE_CONFIG = {
-  ttl: 5 * 60 * 1000, // ✅ 5분 (기존 1시간 → 5분)
-  key: 'shopify_orders_cache',
+  ttl: 5 * 60 * 1000, // 5분
 };
 
 let cachedData: any = null;
@@ -11,7 +10,7 @@ let cacheTimestamp: number | null = null;
 
 function getCachedData() {
   const now = Date.now();
-  if (cachedData && cacheTimestamp && (now - cacheTimestamp) < CACHE_CONFIG.ttl) {
+  if (cachedData && cacheTimestamp && now - cacheTimestamp < CACHE_CONFIG.ttl) {
     console.log('✓ 백엔드 5분 캐시 데이터 사용');
     return cachedData;
   }
@@ -23,9 +22,26 @@ function setCachedData(data: any) {
   cacheTimestamp = Date.now();
 }
 
-// ============ Shopify API 호출 (보안 적용) ============
+// ============ Link 헤더에서 다음 페이지 URL 추출 ============
+function getNextPageUrl(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  // 형식: <https://...>; rel="next", <https://...>; rel="previous"
+  const parts = linkHeader.split(',');
+  for (const part of parts) {
+    if (part.includes('rel="next"')) {
+      const match = part.match(/<([^>]+)>/);
+      if (match) return match[1];
+    }
+  }
+  return null;
+}
+
+// ============ Shopify API 호출 (페이지네이션 포함) ============
 async function fetchFromShopifyAPI(): Promise<any> {
-  const shop = process.env.NEXT_PUBLIC_SHOPIFY_STORE || process.env.SHOPIFY_STORE_DOMAIN || 'aone-beauty-health.myshopify.com';
+  const shop =
+    process.env.NEXT_PUBLIC_SHOPIFY_STORE ||
+    process.env.SHOPIFY_STORE_DOMAIN ||
+    'aone-beauty-health.myshopify.com';
   const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
   const apiVersion = '2024-01';
 
@@ -33,174 +49,87 @@ async function fetchFromShopifyAPI(): Promise<any> {
     throw new Error('SHOPIFY_ACCESS_TOKEN 환경 변수가 설정되지 않았습니다.');
   }
 
-  const url = `https://${shop}/admin/api/${apiVersion}/orders.json?status=any&limit=50`;
+  // ✅ 40일 전부터 조회 (7일 / 30일 / 이번 달 모두 커버)
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 40);
+  startDate.setHours(0, 0, 0, 0);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  let url: string | null =
+    `https://${shop}/admin/api/${apiVersion}/orders.json` +
+    `?status=any&limit=250&created_at_min=${startDate.toISOString()}`;
 
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json',
-      },
-      signal: controller.signal,
-    });
+  const allOrders: any[] = [];
+  let pageCount = 0;
+  const MAX_PAGES = 10; // 안전장치: 최대 2,500건
 
-    clearTimeout(timeoutId);
+  while (url && pageCount < MAX_PAGES) {
+    pageCount++;
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`Shopify API 오류 (${response.status}): ${errorBody}`);
-    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Shopify API 요청 타임아웃 (10초 초과)');
-    }
-    throw error;
-  }
-}
+    try {
+      const response: Response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        cache: 'no-store',
+      });
 
-// ============ 데이터 유효성 검사 및 필터링 ============
-function validateAndFilterOrders(orders: any[]): any[] {
-  return orders
-    .filter((order) => {
-      if (!order.id || !order.created_at || !order.total_price) {
-        console.warn(`⚠️ 불완전한 주문 필터링됨: ${order.id}`);
-        return false;
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Shopify API Error ${response.status}: ${body.slice(0, 200)}`);
       }
-      return true;
-    })
-    .map((order) => ({
-      id: order.id,
-      name: order.name || `#${order.id}`,
-      created_at: order.created_at,
-      total_price: order.total_price || '0',
-      financial_status: order.financial_status || 'unknown',
-      email: order.email,
-      contact_email: order.contact_email,
-      customer: order.customer ? {
-        id: order.customer.id,
-        first_name: order.customer.first_name || '',
-        last_name: order.customer.last_name || '',
-        email: order.customer.email || '',
-        verified_email: order.customer.verified_email || false,
-      } : undefined,
-      billing_address: order.billing_address ? {
-        name: order.billing_address.name,
-        first_name: order.billing_address.first_name,
-        last_name: order.billing_address.last_name,
-        city: order.billing_address.city,
-        province: order.billing_address.province,
-        country: order.billing_address.country,
-      } : undefined,
-      line_items: (order.line_items || []).map((item: any) => ({
-        id: item.id,
-        title: item.title || '상품명 없음',
-        quantity: item.quantity || 0,
-        price: item.price || '0',
-        sku: item.sku,
-        vendor: item.vendor,
-      })),
-    }));
+
+      const data = await response.json();
+      const pageOrders = data.orders || [];
+      allOrders.push(...pageOrders);
+
+      console.log(`✓ 페이지 ${pageCount}: ${pageOrders.length}건 (누적 ${allOrders.length}건)`);
+
+      // 다음 페이지 있으면 계속
+      url = getNextPageUrl(response.headers.get('link'));
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  console.log(`✅ Shopify 총 ${allOrders.length}건 수신 (${pageCount}페이지)`);
+
+  return {
+    orders: allOrders,
+    totalCount: allOrders.length,
+    pages: pageCount,
+    fetchedFrom: startDate.toISOString(),
+    timestamp: new Date().toISOString(),
+  };
 }
 
-// ============ GET 엔드포인트 ============
+// ============ GET 핸들러 ============
 export async function GET(request: NextRequest) {
   try {
-    // ✅ force=true 파라미터 시 캐시 무시
-    const forceRefresh = request.nextUrl.searchParams.get('force') === 'true';
+    const { searchParams } = new URL(request.url);
+    const force = searchParams.get('force') === 'true';
 
-    if (!forceRefresh) {
+    if (!force) {
       const cached = getCachedData();
       if (cached) {
-        return NextResponse.json({
-          success: true,
-          orders: cached,
-          source: 'cache',
-          timestamp: new Date().toISOString(),
-        });
+        return NextResponse.json({ ...cached, cached: true });
       }
-    } else {
-      // 강제 새로고침 시 캐시 초기화
-      cachedData = null;
-      cacheTimestamp = null;
-      console.log('🔄 강제 새로고침 - 캐시 초기화');
     }
 
-    console.log('📡 Shopify API 호출 시작 (5분 보관)...');
-    const shopifyResponse = await fetchFromShopifyAPI();
+    const result = await fetchFromShopifyAPI();
+    setCachedData(result);
 
-    if (!shopifyResponse.orders || shopifyResponse.orders.length === 0) {
-      console.warn('⚠️ Shopify에서 주문 데이터 없음');
-      return NextResponse.json({
-        success: true,
-        orders: [],
-        source: 'shopify',
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    const validatedOrders = validateAndFilterOrders(shopifyResponse.orders);
-    setCachedData(validatedOrders);
-
-    console.log(`✓ ${validatedOrders.length}개 주문 데이터 가져오기 완료`);
-
-    return NextResponse.json({
-      success: true,
-      orders: validatedOrders,
-      source: 'shopify',
-      count: validatedOrders.length,
-      timestamp: new Date().toISOString(),
-    });
-
+    return NextResponse.json({ ...result, cached: false });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류';
-    console.error('❌ API 오류:', errorMessage);
-
-    const cached = getCachedData();
-    if (cached) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: '최신 데이터를 불러올 수 없어 캐시된 데이터를 표시합니다',
-          orders: cached,
-          source: 'cache_fallback',
-          timestamp: new Date().toISOString(),
-        },
-        { status: 200 }
-      );
-    }
-
+    console.error('❌ Shopify API 오류:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: errorMessage,
-        orders: [],
-        timestamp: new Date().toISOString(),
-      },
+      { error: 'Failed to fetch orders', details: String(error), orders: [] },
       { status: 500 }
     );
-  }
-}
-
-// ============ POST 수동 캐시 초기화 엔드포인트 ============
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    if (body.action === 'clear-cache') {
-      cachedData = null;
-      cacheTimestamp = null;
-      console.log('🧹 백엔드 캐시 비우기 완료');
-      return NextResponse.json({ success: true, message: '캐시 초기화됨' });
-    }
-    return NextResponse.json({ error: '알 수 없는 액션' }, { status: 400 });
-  } catch (e) {
-    return NextResponse.json({ error: '잘못된 요청 형식' }, { status: 400 });
   }
 }

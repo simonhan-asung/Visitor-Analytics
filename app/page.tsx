@@ -121,9 +121,42 @@ export default function VisitorAnalyticsDashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  // ===== ✅ 기간별 필터링 =====
+  const getPeriodStart = (): Date => {
+    const now = new Date();
+    switch (period) {
+      case '최근 7일': {
+        const d = new Date(now);
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - 6); // 오늘 포함 7일
+        return d;
+      }
+      case '최근 30일': {
+        const d = new Date(now);
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - 29); // 오늘 포함 30일
+        return d;
+      }
+      case '이번 달':
+        return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      default: {
+        const d = new Date(now);
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - 6);
+        return d;
+      }
+    }
+  };
+
+  const periodStart = getPeriodStart();
+  const periodDays = Math.max(1, Math.ceil((Date.now() - periodStart.getTime()) / (24 * 60 * 60 * 1000)));
+
+  // 이 배열이 모든 탭·카드·그래프의 기준이 됩니다
+  const filteredOrders = orders.filter((o) => new Date(o.created_at) >= periodStart);
+
   // --- 데이터 계산 ---
   const customerSet = new Set();
-  orders.forEach((o) => {
+  filteredOrders.forEach((o) => {
     const customerId =
       o.customer?.id ||
       o.customer?.email ||
@@ -135,10 +168,16 @@ export default function VisitorAnalyticsDashboard() {
   });
   const totalCustomersCount = customerSet.size;
 
-  const paidOrders = orders.filter((o) => o.financial_status === 'paid' || o.financial_status === 'authorized');
-  const nonConvertingOrders = orders.filter((o) => o.financial_status !== 'paid' && o.financial_status !== 'authorized');
+  const paidOrders = filteredOrders.filter((o) => o.financial_status === 'paid' || o.financial_status === 'authorized');
+  const nonConvertingOrders = filteredOrders.filter((o) => o.financial_status !== 'paid' && o.financial_status !== 'authorized');
 
-  const chartDataMap = orders.reduce((acc: { [key: string]: ChartDataItem }, order) => {
+  const totalRevenue = filteredOrders.reduce((acc, o) => acc + parseFloat(o.total_price || '0'), 0);
+  const totalItemsSold = filteredOrders.reduce(
+    (acc, o) => acc + (o.line_items?.reduce((s, it) => s + (it.quantity || 0), 0) || 0),
+    0
+  );
+
+  const chartDataMap = filteredOrders.reduce((acc: { [key: string]: ChartDataItem }, order) => {
     const date = order.created_at.split('T')[0];
     if (!acc[date]) {
       acc[date] = { date, pageViews: 0, uniqueVisitors: 0, orderCount: 0 };
@@ -155,7 +194,7 @@ export default function VisitorAnalyticsDashboard() {
   const vendorMap: { [key: string]: { count: number; revenue: number } } = {};
   const skuMap: { [key: string]: { name: string; count: number; revenue: number } } = {};
 
-  orders.forEach((o) => {
+  filteredOrders.forEach((o) => {
     o.line_items?.forEach((item) => {
       const vendor = item.vendor || '기타 브랜드';
       const sku = item.sku || item.title;
@@ -180,13 +219,22 @@ export default function VisitorAnalyticsDashboard() {
     .sort((a, b) => b.count - a.count);
 
   const regionMap: { [key: string]: number } = {};
-  orders.forEach((o) => {
+  filteredOrders.forEach((o) => {
     const city = o.billing_address?.city || '미지정 지역';
     regionMap[city] = (regionMap[city] || 0) + 1;
   });
-  const regionData = Object.entries(regionMap).map(([city, count]) => ({ city, count }));
+  const regionData = Object.entries(regionMap)
+    .map(([city, count]) => ({ city, count }))
+    .sort((a, b) => b.count - a.count);
 
-  const COLORS = ['#f43f5e', '#fb7185', '#e11d48', '#10b981', '#fbbf24', '#c084fc'];
+  const COLORS = ['#f43f5e', '#fb7185', '#e11d48', '#10b981', '#fbbf24', '#c084fc', '#38bdf8', '#a3e635', '#fb923c', '#f472b6'];
+
+  // ✅ 파이차트용: 상위 8개 브랜드 + 나머지는 '기타'로 합침 (라벨 깔끔하게)
+  const PIE_TOP_N = 8;
+  const pieTop = topVendors.slice(0, PIE_TOP_N).map((v) => ({ name: v.vendor, value: Math.round(v.revenue) }));
+  const pieRest = topVendors.slice(PIE_TOP_N).reduce((acc, v) => acc + v.revenue, 0);
+  const pieData = pieRest > 0 ? [...pieTop, { name: '기타', value: Math.round(pieRest) }] : pieTop;
+  const pieTotal = pieData.reduce((acc, d) => acc + d.value, 0) || 1;
 
   return (
     <div style={{ backgroundColor: '#14080a', color: '#fecdd3', minHeight: '100vh', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -293,12 +341,12 @@ export default function VisitorAnalyticsDashboard() {
           <div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px', marginBottom: '24px' }}>
               {[
-                { title: '순 구매 고객 수', value: loading ? '...' : `${totalCustomersCount}명`, sub: '통합 식별 기준', color: '#f43f5e' },
+                { title: '순 구매 고객 수', value: loading ? '...' : `${totalCustomersCount}명`, sub: `${period} · 통합 식별`, color: '#f43f5e' },
                 { title: '승인/결제 주문 수', value: loading ? '...' : `${paidOrders.length}건`, sub: '유효 주문', color: '#fb7185' },
-                { title: '전체 주문 수', value: loading ? '...' : `${orders.length}건`, sub: '전체 결제 시도', color: '#10b981' },
-                { title: '상품 조회/구매', value: loading ? '...' : (orders.length * 12).toLocaleString(), sub: 'product_view', color: '#c084fc' },
-                { title: '총 매출액', value: loading ? '...' : `$${orders.reduce((acc, o) => acc + parseFloat(o.total_price || '0'), 0).toFixed(2)} CAD`, sub: '전체 주문 합계', color: '#fbbf24' },
-                { title: '일평균 주문', value: loading ? '...' : `${(orders.length / 7).toFixed(1)}건`, sub: 'per active day', color: '#e11d48' },
+                { title: '전체 주문 수', value: loading ? '...' : `${filteredOrders.length}건`, sub: '전체 결제 시도', color: '#10b981' },
+                { title: '판매 상품 수', value: loading ? '...' : totalItemsSold.toLocaleString(), sub: 'line item 합계', color: '#c084fc' },
+                { title: '총 매출액', value: loading ? '...' : `$${totalRevenue.toFixed(2)} CAD`, sub: `${period} 합계`, color: '#fbbf24' },
+                { title: '일평균 주문', value: loading ? '...' : `${(filteredOrders.length / periodDays).toFixed(1)}건`, sub: `${periodDays}일 기준`, color: '#e11d48' },
               ].map((card, idx) => (
                 <div
                   key={idx}
@@ -361,7 +409,9 @@ export default function VisitorAnalyticsDashboard() {
         {/* ===== 미거래 방문 고객 ===== */}
         {activeTab === '미거래 방문 고객' && (
           <div style={{ backgroundColor: '#1c0d10', border: '1px solid #33141a', borderRadius: '12px', padding: '20px' }}>
-            <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>🍩 결제 미완료 / 미거래 고객 내역</h3>
+            <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>
+              🍩 결제 미완료 / 미거래 고객 내역 — {period} · {nonConvertingOrders.length}건
+            </h3>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #4c1d24', color: '#fda4af' }}>
@@ -388,18 +438,21 @@ export default function VisitorAnalyticsDashboard() {
         {/* ===== 구매 고객 방문 ===== */}
         {activeTab === '구매 고객 방문' && (
           <div style={{ backgroundColor: '#1c0d10', border: '1px solid #33141a', borderRadius: '12px', padding: '20px' }}>
-            <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>🛒 최근 결제 구매 고객 명단 (통합)</h3>
+            <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>
+              🛒 구매 고객 명단 (통합) — {period} · 총 {filteredOrders.length}건
+            </h3>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #4c1d24', color: '#fda4af' }}>
                   <th style={{ padding: '10px' }}>주문 번호</th>
                   <th style={{ padding: '10px' }}>구매자 이름 / 이메일</th>
                   <th style={{ padding: '10px' }}>결제 금액</th>
+                  <th style={{ padding: '10px' }}>상태</th>
                   <th style={{ padding: '10px' }}>주문 일시</th>
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o) => {
+                {filteredOrders.map((o) => {
                   const customerName =
                     (o.customer?.first_name ? `${o.customer.first_name} ${o.customer.last_name}` : null) ||
                     o.billing_address?.name ||
@@ -412,6 +465,7 @@ export default function VisitorAnalyticsDashboard() {
                       <td style={{ padding: '10px', color: '#10b981', fontWeight: 'bold' }}>{o.name}</td>
                       <td style={{ padding: '10px', color: '#fff' }}>{customerName}</td>
                       <td style={{ padding: '10px', color: '#10b981', fontWeight: 'bold' }}>${o.total_price} CAD</td>
+                      <td style={{ padding: '10px', color: '#fda4af' }}>{o.financial_status}</td>
                       <td style={{ padding: '10px', color: '#9f1239' }}>{new Date(o.created_at).toLocaleString('ko-KR')}</td>
                     </tr>
                   );
@@ -425,7 +479,7 @@ export default function VisitorAnalyticsDashboard() {
         {activeTab === '많이 찾는 SKU·브랜드' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <div style={{ backgroundColor: '#1c0d10', border: '1px solid #33141a', borderRadius: '12px', padding: '20px' }}>
-              <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>🏷️ 베스트셀러 브랜드 Top</h3>
+              <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>🏷️ 베스트셀러 브랜드 Top — {period}</h3>
               {topVendors.map((v, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #280d13' }}>
                   <span style={{ color: '#fff' }}>{i + 1}. {v.vendor}</span>
@@ -435,7 +489,7 @@ export default function VisitorAnalyticsDashboard() {
             </div>
 
             <div style={{ backgroundColor: '#1c0d10', border: '1px solid #33141a', borderRadius: '12px', padding: '20px' }}>
-              <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>📦 인기 SKU Top</h3>
+              <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>📦 인기 SKU Top — {period}</h3>
               {topSKUs.map((s, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #280d13' }}>
                   <span style={{ color: '#fff' }}>{s.sku} ({s.name})</span>
@@ -449,18 +503,40 @@ export default function VisitorAnalyticsDashboard() {
         {/* ===== 카테고리 관심도 ===== */}
         {activeTab === '카테고리 관심도' && (
           <div style={{ backgroundColor: '#1c0d10', border: '1px solid #33141a', borderRadius: '12px', padding: '20px' }}>
-            <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>📦 브랜드/카테고리 매출 점유율</h3>
-            <div style={{ width: '100%', height: 320 }}>
+            <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>
+              📦 브랜드/카테고리 매출 점유율 — {period}
+            </h3>
+            <div style={{ width: '100%', height: 420 }}>
               <ResponsiveContainer>
                 <PieChart>
-                  <Pie data={topVendors} dataKey="revenue" nameKey="vendor" cx="50%" cy="50%" outerRadius={100} fill="#8884d8" label>
-                    {topVendors.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <Pie
+                    data={pieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={130}
+                    minAngle={3}
+                    labelLine={{ stroke: '#4c1d24' }}
+                    label={({ name, value }: any) => `${name} $${Math.round(value)}`}
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="#14080a" strokeWidth={2} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#2e0f15', border: '1px solid #4c1d24', borderRadius: '8px', color: '#fff' }}
+                    formatter={(value: any, name: any) => [
+                      `$${Math.round(Number(value))} CAD (${((Number(value) / pieTotal) * 100).toFixed(1)}%)`,
+                      name,
+                    ]}
+                  />
                 </PieChart>
               </ResponsiveContainer>
+            </div>
+
+            <div style={{ marginTop: '8px', fontSize: '12px', color: '#881337' }}>
+              상위 {PIE_TOP_N}개 브랜드만 개별 표시, 나머지는 &apos;기타&apos;로 합산됩니다.
             </div>
           </div>
         )}
@@ -468,14 +544,16 @@ export default function VisitorAnalyticsDashboard() {
         {/* ===== 지역 분포 ===== */}
         {activeTab === '지역 분포' && (
           <div style={{ backgroundColor: '#1c0d10', border: '1px solid #33141a', borderRadius: '12px', padding: '20px' }}>
-            <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>🗺️ 도시별 주문/배송 지역 분포</h3>
-            <div style={{ width: '100%', height: 320 }}>
+            <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>
+              🗺️ 도시별 주문/배송 지역 분포 — {period} · {regionData.length}개 도시
+            </h3>
+            <div style={{ width: '100%', height: 420 }}>
               <ResponsiveContainer>
-                <BarChart data={regionData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#33141a" />
-                  <XAxis dataKey="city" stroke="#881337" />
-                  <YAxis stroke="#881337" />
-                  <Tooltip />
+                <BarChart data={regionData} margin={{ bottom: 70 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#33141a" vertical={false} />
+                  <XAxis dataKey="city" stroke="#881337" fontSize={11} interval={0} angle={-45} textAnchor="end" height={80} />
+                  <YAxis stroke="#881337" allowDecimals={false} />
+                  <Tooltip contentStyle={{ backgroundColor: '#2e0f15', border: '1px solid #4c1d24', borderRadius: '8px', color: '#fff' }} />
                   <Bar dataKey="count" fill="#f43f5e" name="주문 수" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
