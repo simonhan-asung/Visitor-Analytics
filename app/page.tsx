@@ -62,7 +62,11 @@ export default function VisitorAnalyticsDashboard() {
   const [ga4Data, setGa4Data] = useState<any>(null);
   const [ga4Error, setGa4Error] = useState<string | null>(null);
 
-  // ✅ Shopify 데이터
+  // ✅ 새로 추가: 미거래 고객 + GA4 방문 로그 상태
+  const [nonConvertingCustomers, setNonConvertingCustomers] = useState<any[]>([]);
+  const [expandedCustomerId, setExpandedCustomerId] = useState<number | string | null>(null);
+
+  // ✅ Shopify 주문 데이터
   const fetchShopifyData = async (forceRefresh = false) => {
     setLoading(true);
     try {
@@ -81,7 +85,7 @@ export default function VisitorAnalyticsDashboard() {
     }
   };
 
-  // ✅ GA4 데이터 - 로그인 안 되어 있어도 "로딩중"에 멈추지 않도록 처리
+  // ✅ GA4 데이터
   const fetchGA4Data = async () => {
     setGa4Loading(true);
     setGa4Error(null);
@@ -102,8 +106,22 @@ export default function VisitorAnalyticsDashboard() {
     }
   };
 
+  // ✅ 미거래 고객 + GA4 방문 로그 데이터 불러오기
+  const fetchNonConvertingCustomers = async () => {
+    try {
+      const res = await fetch('/api/non-converting-customers', { cache: 'no-store' });
+      const data = await res.json();
+      if (data.nonConvertingCustomers) {
+        setNonConvertingCustomers(data.nonConvertingCustomers);
+      }
+    } catch (err) {
+      console.error('Non-converting customers fetch error:', err);
+    }
+  };
+
   useEffect(() => {
     fetchShopifyData();
+    fetchNonConvertingCustomers(); // 마운트 시 실행
   }, []);
 
   // ✅ 로그인 상태가 바뀌면 GA4 다시 조회
@@ -117,6 +135,7 @@ export default function VisitorAnalyticsDashboard() {
     const interval = setInterval(() => {
       fetchShopifyData();
       fetchGA4Data();
+      fetchNonConvertingCustomers(); // 5분마다 동기화
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
@@ -128,13 +147,13 @@ export default function VisitorAnalyticsDashboard() {
       case '최근 7일': {
         const d = new Date(now);
         d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() - 6); // 오늘 포함 7일
+        d.setDate(d.getDate() - 6); 
         return d;
       }
       case '최근 30일': {
         const d = new Date(now);
         d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() - 29); // 오늘 포함 30일
+        d.setDate(d.getDate() - 29); 
         return d;
       }
       case '이번 달':
@@ -151,7 +170,6 @@ export default function VisitorAnalyticsDashboard() {
   const periodStart = getPeriodStart();
   const periodDays = Math.max(1, Math.ceil((Date.now() - periodStart.getTime()) / (24 * 60 * 60 * 1000)));
 
-  // 이 배열이 모든 탭·카드·그래프의 기준이 됩니다
   const filteredOrders = orders.filter((o) => new Date(o.created_at) >= periodStart);
 
   // --- 데이터 계산 ---
@@ -169,7 +187,6 @@ export default function VisitorAnalyticsDashboard() {
   const totalCustomersCount = customerSet.size;
 
   const paidOrders = filteredOrders.filter((o) => o.financial_status === 'paid' || o.financial_status === 'authorized');
-  const nonConvertingOrders = filteredOrders.filter((o) => o.financial_status !== 'paid' && o.financial_status !== 'authorized');
 
   const totalRevenue = filteredOrders.reduce((acc, o) => acc + parseFloat(o.total_price || '0'), 0);
   const totalItemsSold = filteredOrders.reduce(
@@ -229,7 +246,6 @@ export default function VisitorAnalyticsDashboard() {
 
   const COLORS = ['#f43f5e', '#fb7185', '#e11d48', '#10b981', '#fbbf24', '#c084fc', '#38bdf8', '#a3e635', '#fb923c', '#f472b6'];
 
-  // ✅ 파이차트용: 상위 8개 브랜드 + 나머지는 '기타'로 합침 (라벨 깔끔하게)
   const PIE_TOP_N = 8;
   const pieTop = topVendors.slice(0, PIE_TOP_N).map((v) => ({ name: v.vendor, value: Math.round(v.revenue) }));
   const pieRest = topVendors.slice(PIE_TOP_N).reduce((acc, v) => acc + v.revenue, 0);
@@ -313,6 +329,7 @@ export default function VisitorAnalyticsDashboard() {
               onClick={() => {
                 fetchShopifyData(true);
                 fetchGA4Data();
+                fetchNonConvertingCustomers();
               }}
               disabled={loading}
               style={{
@@ -406,30 +423,100 @@ export default function VisitorAnalyticsDashboard() {
           </div>
         )}
 
-        {/* ===== 미거래 방문 고객 ===== */}
+        {/* ===== ✅ 업데이트된 미거래 방문 고객 ===== */}
         {activeTab === '미거래 방문 고객' && (
           <div style={{ backgroundColor: '#1c0d10', border: '1px solid #33141a', borderRadius: '12px', padding: '20px' }}>
-            <h3 style={{ marginTop: 0, color: '#ffe4e6' }}>
-              🍩 결제 미완료 / 미거래 고객 내역 — {period} · {nonConvertingOrders.length}건
+            <h3 style={{ marginTop: 0, color: '#ffe4e6', display: 'flex', justifyContent: 'space-between' }}>
+              <span>🍩 미거래/구매전 고객 내역 — {nonConvertingCustomers.length}명</span>
+              <span style={{ fontSize: '12px', color: '#fda4af', fontWeight: 'normal' }}>
+                * 행을 클릭하면 해당 고객의 웹사이트 방문 URL 기록이 열립니다.
+              </span>
             </h3>
+
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #4c1d24', color: '#fda4af' }}>
-                  <th style={{ padding: '10px' }}>주문 번호</th>
-                  <th style={{ padding: '10px' }}>고객 이메일</th>
-                  <th style={{ padding: '10px' }}>미결제 금액</th>
-                  <th style={{ padding: '10px' }}>상태</th>
+                  <th style={{ padding: '10px' }}>고객 ID / 이름</th>
+                  <th style={{ padding: '10px' }}>이메일</th>
+                  <th style={{ padding: '10px' }}>가입/첫방문일</th>
+                  <th style={{ padding: '10px' }}>GA4 방문한 페이지 수</th>
+                  <th style={{ padding: '10px' }}>상세 보기</th>
                 </tr>
               </thead>
               <tbody>
-                {nonConvertingOrders.map((o) => (
-                  <tr key={o.id} style={{ borderBottom: '1px solid #280d13' }}>
-                    <td style={{ padding: '10px', color: '#f43f5e' }}>{o.name}</td>
-                    <td style={{ padding: '10px', color: '#fff' }}>{o.email || o.contact_email || '비회원'}</td>
-                    <td style={{ padding: '10px', color: '#fbbf24' }}>${o.total_price} CAD</td>
-                    <td style={{ padding: '10px', color: '#fda4af' }}>{o.financial_status}</td>
-                  </tr>
-                ))}
+                {nonConvertingCustomers.map((c) => {
+                  const isExpanded = expandedCustomerId === c.id;
+                  const visitLogs = c.visitLogs || [];
+
+                  return (
+                    <div key={c.id} style={{ display: 'contents' }}>
+                      {/* 기본 고객 정보 행 */}
+                      <tr 
+                        onClick={() => setExpandedCustomerId(isExpanded ? null : c.id)}
+                        style={{ 
+                          borderBottom: '1px solid #280d13', 
+                          cursor: 'pointer',
+                          backgroundColor: isExpanded ? '#280d13' : 'transparent' 
+                        }}
+                      >
+                        <td style={{ padding: '10px', color: '#f43f5e', fontWeight: 'bold' }}>
+                          {c.firstName ? `${c.firstName} ${c.lastName || ''}` : `고객 #${c.id}`}
+                        </td>
+                        <td style={{ padding: '10px', color: '#fff' }}>{c.email || '비회원/이메일 없음'}</td>
+                        <td style={{ padding: '10px', color: '#fda4af' }}>
+                          {c.createdAt ? new Date(c.createdAt).toLocaleDateString('ko-KR') : '-'}
+                        </td>
+                        <td style={{ padding: '10px', color: '#10b981', fontWeight: 'bold' }}>
+                          {visitLogs.length > 0 ? `🌐 ${visitLogs.length}개 페이지` : '방문 로그 없음'}
+                        </td>
+                        <td style={{ padding: '10px', color: '#fbbf24' }}>
+                          {isExpanded ? '▲ 닫기' : '▼ 클릭하여 방문 URL 보기'}
+                        </td>
+                      </tr>
+
+                      {/* 🔻 클릭 시 열리는 GA4 방문 URL 타임라인 (아코디언) */}
+                      {isExpanded && (
+                        <tr style={{ backgroundColor: '#14080a' }}>
+                          <td colSpan={5} style={{ padding: '16px 24px', borderBottom: '1px solid #4c1d24' }}>
+                            <div style={{ fontWeight: 'bold', color: '#fda4af', marginBottom: '10px' }}>
+                              🔗 {c.email || c.id} 고객의 웹사이트 행동 경로 (GA4 Log)
+                            </div>
+
+                            {visitLogs.length > 0 ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {visitLogs.map((log: any, idx: number) => (
+                                  <div 
+                                    key={idx} 
+                                    style={{ 
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      justifyContent: 'space-between',
+                                      backgroundColor: '#1c0d10', 
+                                      padding: '8px 12px', 
+                                      borderRadius: '6px',
+                                      border: '1px solid #33141a' 
+                                    }}
+                                  >
+                                    <span style={{ color: '#fff', fontSize: '12px' }}>
+                                      📄 <strong>{log.pageTitle || '페이지'}</strong> ({log.visitedUrl})
+                                    </span>
+                                    <span style={{ color: '#9f1239', fontSize: '11px' }}>
+                                      {log.visitTime ? new Date(log.visitTime).toLocaleString('ko-KR') : ''}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div style={{ color: '#881337', fontSize: '12px' }}>
+                                이 고객과 매칭된 GA4 방문 URL 기록이 없습니다.
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </div>
+                  );
+                })}
               </tbody>
             </table>
           </div>
